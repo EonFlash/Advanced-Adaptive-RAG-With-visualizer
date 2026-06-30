@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adaptive RAG — Live Reasoning Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="scanlines"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">⟁</span>
+    <div class="brand-text">
+      <h1>Adaptive&nbsp;RAG<span class="dim">/</span><span class="accent">visualizer</span></h1>
+      <p>self-correcting retrieval graph — relevance, support &amp; usefulness loops, watched live</p>
+    </div>
+  </div>
+  <div class="mode-badge {{ 'demo' if demo_mode else 'live' }}" id="modeBadge">
+    <span class="dot"></span> {{ 'DEMO MODE' if demo_mode else 'LIVE · AZURE OPENAI' }}
+  </div>
+</header>
+
+<main class="layout">
+
+  <section class="panel graph-panel">
+    <div class="panel-head">
+      <h2>Execution Graph</h2>
+      <div class="legend">
+        <span class="legend-item"><i class="sw idle"></i>idle</span>
+        <span class="legend-item"><i class="sw active"></i>running</span>
+        <span class="legend-item"><i class="sw success"></i>done</span>
+        <span class="legend-item"><i class="sw retry"></i>retry / loop</span>
+        <span class="legend-item"><i class="sw fail"></i>dead end</span>
+      </div>
+    </div>
+    <div class="svg-wrap">
+      <svg id="graphSvg" viewBox="0 0 1350 760" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 Z" class="arrowhead"></path>
+          </marker>
+          <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="4.2" result="blur"></feGaussianBlur>
+            <feMerge>
+              <feMergeNode in="blur"></feMergeNode>
+              <feMergeNode in="SourceGraphic"></feMergeNode>
+            </feMerge>
+          </filter>
+        </defs>
+        <g id="edgeLayer"></g>
+        <g id="nodeLayer"></g>
+      </svg>
+    </div>
+  </section>
+
+  <aside class="panel side-panel">
+
+    <div class="ask-block">
+      <h2>Ask a question</h2>
+      <form id="askForm">
+        <textarea id="questionInput" rows="3" placeholder="e.g. What is Orbis Financial's termination notice period?"></textarea>
+        <div class="ask-row">
+          <div class="presets" id="presets">
+            <button type="button" data-q="What is Orbis Financial's termination notice period?">Termination notice</button>
+            <button type="button" data-q="Does NexaAI offer a refund?">NexaAI refund</button>
+            <button type="button" data-q="What is photosynthesis?">General knowledge</button>
+          </div>
+          <button type="submit" id="askBtn" class="ask-btn">
+            <span class="btn-label">Run graph</span>
+            <span class="spinner" hidden></span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat"><span class="stat-num" id="statRetries">0</span><span class="stat-label">support retries</span></div>
+      <div class="stat"><span class="stat-num" id="statRewrites">0</span><span class="stat-label">query rewrites</span></div>
+      <div class="stat"><span class="stat-num" id="statSteps">0</span><span class="stat-label">steps run</span></div>
+    </div>
+
+    <div class="answer-block" id="answerBlock" hidden>
+      <h2>Final Answer</h2>
+      <p id="answerText"></p>
+    </div>
+
+    <div class="log-block">
+      <h2>Live trace</h2>
+      <div class="log-feed" id="logFeed">
+        <p class="log-empty">Run a question to watch the graph think step by step.</p>
+      </div>
+    </div>
+
+  </aside>
+
+</main>
+
+<footer class="footer">
+  <span>Built on LangGraph · Azure OpenAI · Flask</span>
+</footer>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
