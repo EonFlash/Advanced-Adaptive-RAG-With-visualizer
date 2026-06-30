@@ -374,6 +374,21 @@ def _match_topic(question: str):
     return None
 
 
+# Deterministic outcome per curated preset topic, so the preset buttons always
+# demonstrate the specific branch they're labeled for instead of leaving it to
+# chance: one clean grounded answer (termination), one IsSUP revise loop
+# (refund), one IsUSE rewrite loop (trial), one no-answer dead end (leave).
+# Anything else (the "default" bucket — company-related but not one of these
+# four curated topics) still uses the randomized behavior below so ad-hoc
+# questions stay lively and unpredictable.
+_SCRIPTED_OUTCOMES = {
+    "termination": {"revise": False, "rewrite": False, "force_no_answer": False},
+    "refund":      {"revise": True,  "rewrite": False, "force_no_answer": False},
+    "trial":       {"revise": False, "rewrite": True,  "force_no_answer": False},
+    "leave":       {"revise": False, "rewrite": False, "force_no_answer": True},
+}
+
+
 GUIDANCE_ANSWER = (
     "This question isn't covered by the sample documents loaded in this demo "
     "(Orbis Financial HR policy + NexaAI pricing terms), so I'm not going to "
@@ -409,10 +424,14 @@ def _run_demo(question: str, on_event: Callable):
         return {"answer": answer}
 
     docs = _DEMO_DOCS.get(topic or "default", _DEMO_DOCS["default"])
+    scripted = _SCRIPTED_OUTCOMES.get(topic)
 
     step("retrieve", 0.45, {"docs": docs}, f"Retrieved {len(docs)} candidate chunks from the vector store (k=4).")
 
-    relevant = docs if (topic is not None or rnd.random() > 0.5) else []
+    if scripted and scripted["force_no_answer"]:
+        relevant = []
+    else:
+        relevant = docs if (topic is not None or rnd.random() > 0.5) else []
     step("is_relevant", 0.5, {"relevant_docs": relevant}, f"{len(relevant)}/{len(docs)} chunks passed the topical relevance filter.")
 
     if not relevant:
@@ -424,9 +443,10 @@ def _run_demo(question: str, on_event: Callable):
     draft = _canned_rag_answer(relevant)
     step("generate_from_context", 0.55, {"answer": draft, "context": context[:300] + "..."})
 
-    # IsSUP: at most ONE revise loop, ever — can happen on any retrieval question.
+    # IsSUP: at most ONE revise loop, ever. Scripted for curated preset topics
+    # so the "revise" preset always demonstrates the loop; random otherwise.
     retries = 0
-    will_revise = rnd.random() < 0.45
+    will_revise = scripted["revise"] if scripted else (rnd.random() < 0.45)
     issup = "partially_supported" if will_revise else "fully_supported"
     step("is_sup", 0.4, {"issup": issup, "evidence": [relevant[0]["snippet"][:90] + "..."]},
          f"Verifier marked the answer as '{issup}'.")
@@ -439,8 +459,10 @@ def _run_demo(question: str, on_event: Callable):
 
     # IsUSE: at most ONE rewrite loop, ever — independent of whether a revise just
     # happened, so the two loops aren't competing for the same probability budget.
+    # Scripted for curated preset topics so the "rewrite" preset always demonstrates
+    # the loop; random otherwise.
     rewrite_tries = 0
-    will_rewrite = rnd.random() < 0.4
+    will_rewrite = scripted["rewrite"] if scripted else (rnd.random() < 0.4)
     isuse = "not_useful" if will_rewrite else "useful"
     step("is_use", 0.35, {"isuse": isuse, "use_reason": "Answer is too generic / off-topic." if will_rewrite else "Directly answers the question."})
 
