@@ -1,15 +1,9 @@
 {
-  "version": 2,
-  "functions": {
-    "app.py": {
-      "runtime": "@vercel/python",
-      "includeFiles": "static/**"
-    }
-  },
+  "builds": [
+    { "src": "app.py", "use": "@vercel/python" }
+  ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app.py"
-    }
+    { "src": "/static/(.*)", "dest": "static/$1" },
+    { "src": "/(.*)", "dest": "app.py" }
   ]
 }
