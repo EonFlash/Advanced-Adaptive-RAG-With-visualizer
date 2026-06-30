@@ -123,9 +123,14 @@
   });
 
   // ---- State machine helpers ----
+  const edgeTraversalCount = {};
+  const edgeBadges = {};
+
   function resetGraph() {
-    Object.values(nodeEls).forEach(el => { el.className.baseVal = el.className.baseVal.replace(/\b(active|success|retry|fail|pulse|lit)\b/g, "").trim(); el.setAttribute("class", el.getAttribute("class").split(" ")[0] + (el.classList.contains("end-node") ? " end-node" : "")); });
-    Object.values(edgeEls).forEach(el => el.classList.remove("flowing", "retry-flow"));
+    Object.values(nodeEls).forEach(el => { el.className.baseVal = el.className.baseVal.replace(/\b(active|success|retry|fail|pulse|lit|pop)\b/g, "").trim(); el.setAttribute("class", el.getAttribute("class").split(" ")[0] + (el.classList.contains("end-node") ? " end-node" : "")); });
+    Object.values(edgeEls).forEach(el => el.classList.remove("flowing", "retry-flow", "traversed", "retry-traversed"));
+    Object.keys(edgeTraversalCount).forEach(k => delete edgeTraversalCount[k]);
+    Object.values(edgeBadges).forEach(b => b.classList.remove("show"));
   }
 
   function setNodeState(id, state) {
@@ -133,18 +138,72 @@
     if (!el) return;
     el.classList.remove("active", "success", "retry", "fail", "pulse");
     if (state) el.classList.add(state);
-    if (state === "active") el.classList.add("pulse");
+    if (state === "active") {
+      el.classList.add("pulse");
+      popNode(id);
+    }
+  }
+
+  function popNode(id) {
+    const el = nodeEls[id];
+    if (!el) return;
+    el.classList.remove("pop");
+    void el.getBBox(); // force reflow so the animation can retrigger on repeat visits (loops)
+    el.classList.add("pop");
+  }
+
+  function edgeMidpoint(pathEl) {
+    try {
+      const len = pathEl.getTotalLength();
+      return pathEl.getPointAtLength(len / 2);
+    } catch { return null; }
+  }
+
+  function showEdgeBadge(edgeId, count) {
+    const pathEl = edgeEls[edgeId];
+    if (!pathEl) return;
+    let badge = edgeBadges[edgeId];
+    if (!badge) {
+      badge = document.createElementNS(NS, "g");
+      badge.setAttribute("class", "edge-badge");
+      const circle = document.createElementNS(NS, "circle");
+      circle.setAttribute("r", 10);
+      circle.setAttribute("class", "edge-badge-bg");
+      const text = document.createElementNS(NS, "text");
+      text.setAttribute("class", "edge-badge-text");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      badge.appendChild(circle);
+      badge.appendChild(text);
+      edgeLayer.appendChild(badge);
+      edgeBadges[edgeId] = badge;
+    }
+    const pt = edgeMidpoint(pathEl);
+    if (pt) badge.setAttribute("transform", `translate(${pt.x},${pt.y})`);
+    badge.querySelector(".edge-badge-text").textContent = "×" + count;
+    badge.classList.add("show");
   }
 
   let lastNode = "start";
   function lightEdge(from, to, kind) {
     const edgeId = (TRANSITION_HINTS[from] && TRANSITION_HINTS[from][to]) || `${from}-${to}`;
     const el = edgeEls[edgeId];
-    if (el) {
-      el.classList.add("flowing");
-      if (kind === "retry") el.classList.add("retry-flow");
-      setTimeout(() => el.classList.remove("flowing", "retry-flow"), 900);
-    }
+    if (!el) return;
+
+    edgeTraversalCount[edgeId] = (edgeTraversalCount[edgeId] || 0) + 1;
+    const count = edgeTraversalCount[edgeId];
+
+    el.classList.remove("traversed", "retry-traversed");
+    el.classList.add("flowing");
+    if (kind === "retry") el.classList.add("retry-flow");
+
+    setTimeout(() => {
+      el.classList.remove("flowing", "retry-flow");
+      el.classList.add("traversed");
+      if (kind === "retry") el.classList.add("retry-traversed");
+    }, 900);
+
+    if (count > 1) showEdgeBadge(edgeId, count);
   }
 
   // ---- Log feed ----
@@ -211,6 +270,7 @@
 
     function runQuestion(question) {
     resetGraph();
+    document.getElementById("graphIdleHint")?.classList.add("hint-hidden");
     answerBlock.hidden = true;
     logFeed.innerHTML = "";
     stepCount = 0; statSteps.textContent = "0";
@@ -304,4 +364,49 @@
     if (!q) return;
     runQuestion(q);
   });
+
+  // ---- Demo-mode intro notice ----
+  const overlay = document.getElementById("introOverlay");
+  const presetTip = document.getElementById("presetTip");
+  const presetsEl = document.getElementById("presets");
+
+  function showPresetTip() {
+    if (!presetTip) return;
+    presetTip.classList.remove("tip-hidden");
+    presetsEl?.classList.add("highlight");
+  }
+  function hidePresetTip() {
+    if (!presetTip) return;
+    presetTip.classList.add("tip-hidden");
+    presetsEl?.classList.remove("highlight");
+  }
+
+  if (overlay) {
+    const closeOverlay = () => { overlay.classList.add("intro-hidden"); showPresetTip(); };
+    const openOverlay = () => { overlay.classList.remove("intro-hidden"); hidePresetTip(); };
+    document.getElementById("introClose")?.addEventListener("click", closeOverlay);
+    document.getElementById("introDismiss")?.addEventListener("click", closeOverlay);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeOverlay(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlay(); });
+    document.getElementById("reopenIntro")?.addEventListener("click", openOverlay);
+  } else {
+    showPresetTip();
+  }
+
+  document.getElementById("presetTipClose")?.addEventListener("click", hidePresetTip);
+  document.querySelectorAll("#presets button").forEach(b => {
+    b.addEventListener("click", hidePresetTip);
+  });
+
+  // ---- "vs Simple RAG" comparison modal ----
+  const compareOverlay = document.getElementById("compareOverlay");
+  if (compareOverlay) {
+    const closeCompare = () => compareOverlay.classList.add("intro-hidden");
+    const openCompare = () => compareOverlay.classList.remove("intro-hidden");
+    document.getElementById("openCompare")?.addEventListener("click", openCompare);
+    document.getElementById("compareClose")?.addEventListener("click", closeCompare);
+    document.getElementById("compareDismiss")?.addEventListener("click", closeCompare);
+    compareOverlay.addEventListener("click", (e) => { if (e.target === compareOverlay) closeCompare(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCompare(); });
+  }
 })();
