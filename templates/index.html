@@ -4,13 +4,142 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Adaptive RAG — Live Reasoning Visualizer</title>
+<meta name="description" content="A live, animated visualizer for a self-correcting Adaptive RAG pipeline built with LangGraph — watch retrieval, relevance filtering, support verification, and query-rewrite loops execute in real time.">
+<meta property="og:title" content="Adaptive RAG — Live Reasoning Visualizer">
+<meta property="og:description" content="Watch a self-correcting RAG graph (LangGraph) reason, retry, and rewrite in real time.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Adaptive RAG — Live Reasoning Visualizer">
+<meta name="twitter:description" content="Watch a self-correcting RAG graph (LangGraph) reason, retry, and rewrite in real time.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0d12'/%3E%3Ctext x='50' y='68' font-size='62' text-anchor='middle' fill='%2349e8c4'%3E%E2%9F%81%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body data-demo-mode="{{ 'true' if demo_mode else 'false' }}">
 
 <div class="scanlines"></div>
+
+{% if demo_mode %}
+<div class="intro-overlay" id="introOverlay">
+  <div class="intro-card">
+    <button class="intro-close" id="introClose" aria-label="Close">✕</button>
+    <div class="intro-badge">👋 HEADS UP</div>
+    <h2 class="intro-title">You're looking at a <span class="accent">live simulated demo</span></h2>
+    <p class="intro-lede">
+      This visualizes a real self-correcting <b>Adaptive RAG</b> pipeline built with LangGraph.
+      To keep a public link free to run for anyone (without me burning API credits on every visitor 😅),
+      it's running in <b>Demo Mode</b> instead of calling a live LLM.
+    </p>
+    <div class="intro-grid">
+      <div class="intro-item">
+        <span class="intro-ico">✓</span>
+        <div><b>Real graph topology</b><br>Every node, route, and loop you see is the exact pipeline — routing, retrieval, relevance filtering, generation, verification.</div>
+      </div>
+      <div class="intro-item">
+        <span class="intro-ico">✓</span>
+        <div><b>Live self-correction loops</b><br>Watch <code>IsSUP</code> trigger a real <code>revise_answer</code> retry, or <code>IsUSE</code> trigger a <code>rewrite_question</code> loop — simulated timing, real logic.</div>
+      </div>
+      <div class="intro-item">
+        <span class="intro-ico">✓</span>
+        <div><b>Canned sample documents</b><br>Instead of a live vector DB, two on-theme docs (an HR policy + pricing terms) stand in for retrieval — no real LLM calls are made.</div>
+      </div>
+      <div class="intro-item">
+        <span class="intro-ico">✓</span>
+        <div><b>Best with the preset questions</b><br>Use the buttons under the question box for a fully grounded run — each one is tuned to trigger a different part of the graph (clean answer, self-correction, query rewrite, or an honest "I don't know").</div>
+      </div>
+    </div>
+
+    <h3 class="compare-heading">Why this isn't just another RAG demo</h3>
+    <p class="intro-lede" style="margin-bottom:14px;">
+      A "simple RAG" pipeline is a single straight line: embed the question,
+      grab the top-k chunks, stuff them in a prompt, generate, done. It has
+      <b>no opinion</b> about whether retrieval was even needed, whether the
+      chunks it grabbed were actually relevant, or whether the answer it wrote
+      is actually backed by them. This graph adds four checkpoints a simple
+      pipeline skips entirely:
+    </p>
+    <table class="compare-table">
+      <thead>
+        <tr><th>Failure mode in simple RAG</th><th>How this graph catches it</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Retrieves docs even for questions that don't need them</td><td><code>decide_retrieval</code> routes general-knowledge questions straight to a direct answer — zero wasted retrieval calls</td></tr>
+        <tr><td>Blindly trusts whatever the vector search returns, even off-topic chunks</td><td><code>is_relevant</code> filters retrieved chunks before they ever reach the prompt</td></tr>
+        <tr><td>Hallucinates details not actually present in the retrieved context</td><td><code>is_sup</code> checks the draft against the context and loops into <code>revise_answer</code> until it's grounded</td></tr>
+        <tr><td>Returns a technically-grounded but unhelpful non-answer</td><td><code>is_use</code> checks the answer actually addresses the question, and loops into <code>rewrite_question</code> to retry retrieval with better keywords</td></tr>
+        <tr><td>Fabricates a confident-sounding answer when nothing relevant exists</td><td><code>no_answer_found</code> returns an honest "not in these documents" instead of guessing</td></tr>
+      </tbody>
+    </table>
+    <p class="intro-lede" style="margin:14px 0 24px;">
+      Click <b>"⚖️ vs Simple RAG"</b> in the top bar any time to see a
+      side-by-side diagram of the two pipelines.
+    </p>
+    <button class="intro-cta" id="introDismiss">Got it — show me the graph →</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="intro-overlay intro-hidden" id="compareOverlay">
+  <div class="intro-card compare-card">
+    <button class="intro-close" id="compareClose" aria-label="Close">✕</button>
+    <div class="intro-badge">⚖️ SIDE BY SIDE</div>
+    <h2 class="intro-title">Simple RAG <span class="dim">vs</span> <span class="accent">this Adaptive RAG</span></h2>
+    <p class="intro-lede">A simple RAG pipeline is one straight line with no way to know when it's wrong. This graph checks itself at four points and loops back when something's off.</p>
+
+    <div class="compare-diagrams">
+      <div class="compare-col">
+        <h4>Simple RAG <span class="compare-tag bad">no self-correction</span></h4>
+        <svg viewBox="0 0 320 120" class="compare-svg simple-svg" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="cmpArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" class="cmp-arrowhead"></path>
+            </marker>
+          </defs>
+          <g class="cmp-node"><rect x="4" y="42" width="68" height="36" rx="8"></rect><text x="38" y="64">Question</text></g>
+          <path d="M72,60 H110" marker-end="url(#cmpArrow)" class="cmp-edge"></path>
+          <g class="cmp-node"><rect x="112" y="42" width="68" height="36" rx="8"></rect><text x="146" y="64">Retrieve</text></g>
+          <path d="M180,60 H218" marker-end="url(#cmpArrow)" class="cmp-edge"></path>
+          <g class="cmp-node"><rect x="220" y="42" width="68" height="36" rx="8"></rect><text x="254" y="58">Generate</text><text x="254" y="71" class="cmp-sub">(no checks)</text></g>
+          <path d="M254,78 V96" marker-end="url(#cmpArrow)" class="cmp-edge"></path>
+          <text x="254" y="112" class="cmp-end">Answer (hope it's right)</text>
+        </svg>
+        <ul class="compare-list bad">
+          <li>Always retrieves, even for general knowledge</li>
+          <li>Never filters irrelevant chunks</li>
+          <li>Never checks if the answer is grounded</li>
+          <li>Never checks if the answer is actually useful</li>
+          <li>Can't recover — one shot, no loops</li>
+        </ul>
+      </div>
+      <div class="compare-col">
+        <h4>This graph <span class="compare-tag good">self-correcting</span></h4>
+        <svg viewBox="0 0 320 150" class="compare-svg adaptive-svg" xmlns="http://www.w3.org/2000/svg">
+          <g class="cmp-node"><rect x="4" y="57" width="64" height="36" rx="8"></rect><text x="36" y="79">Question</text></g>
+          <path d="M68,75 H100" marker-end="url(#cmpArrow)" class="cmp-edge"></path>
+          <g class="cmp-node"><rect x="102" y="57" width="58" height="36" rx="8"></rect><text x="131" y="73">Decide</text><text x="131" y="85" class="cmp-sub">retrieval?</text></g>
+          <path d="M160,75 H192" marker-end="url(#cmpArrow)" class="cmp-edge"></path>
+          <g class="cmp-node"><rect x="194" y="57" width="58" height="36" rx="8"></rect><text x="223" y="73">Relevance</text><text x="223" y="85" class="cmp-sub">filter</text></g>
+          <path d="M252,75 H284" marker-end="url(#cmpArrow)" class="cmp-edge"></path>
+          <g class="cmp-node"><rect x="252" y="2" width="60" height="34" rx="8"></rect><text x="282" y="23">Generate</text></g>
+          <path d="M282,36 V57" marker-end="url(#cmpArrow)" class="cmp-edge" transform="translate(0,0)"></path>
+          <g class="cmp-node retry-node"><rect x="252" y="100" width="60" height="34" rx="8"></rect><text x="282" y="116">IsSUP /</text><text x="282" y="128" class="cmp-sub">IsUSE</text></g>
+          <path d="M282,100 C 282,90 252,90 252,76" class="cmp-edge retry" marker-end="url(#cmpArrow)"></path>
+          <path d="M194,93 C 150,118 110,118 70,98" class="cmp-edge retry" marker-end="url(#cmpArrow)"></path>
+        </svg>
+        <ul class="compare-list good">
+          <li>Skips retrieval for general-knowledge questions</li>
+          <li>Filters out off-topic chunks before generation</li>
+          <li><code>revise_answer</code> loop fixes unsupported claims</li>
+          <li><code>rewrite_question</code> loop retries with better keywords</li>
+          <li>Says "I don't know" instead of fabricating an answer</li>
+        </ul>
+      </div>
+    </div>
+
+    <button class="intro-cta" id="compareDismiss">Got it — back to the graph →</button>
+  </div>
+</div>
 
 <header class="topbar">
   <div class="brand">
@@ -20,8 +149,14 @@
       <p>self-correcting retrieval graph — relevance, support &amp; usefulness loops, watched live</p>
     </div>
   </div>
-  <div class="mode-badge {{ 'demo' if demo_mode else 'live' }}" id="modeBadge">
-    <span class="dot"></span> {{ 'DEMO MODE' if demo_mode else 'LIVE · AZURE OPENAI' }}
+  <div class="topbar-right">
+    {% if demo_mode %}
+    <button class="info-pill" id="reopenIntro" type="button">ℹ️ About this demo</button>
+    {% endif %}
+    <button class="info-pill" id="openCompare" type="button">⚖️ vs Simple RAG</button>
+    <div class="mode-badge {{ 'demo' if demo_mode else 'live' }}" id="modeBadge">
+      <span class="dot"></span> {{ 'DEMO MODE' if demo_mode else 'LIVE · AZURE OPENAI' }}
+    </div>
   </div>
 </header>
 
@@ -38,7 +173,8 @@
         <span class="legend-item"><i class="sw fail"></i>dead end</span>
       </div>
     </div>
-    <div class="svg-wrap">
+    <div class="svg-wrap" style="position:relative;">
+      <div class="graph-idle-hint" id="graphIdleHint"><span>↓ click "Run graph" or pick a preset to watch it execute live ↓</span></div>
       <svg id="graphSvg" viewBox="0 0 1350 760" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
         <defs>
           <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
@@ -63,12 +199,23 @@
     <div class="ask-block">
       <h2>Ask a question</h2>
       <form id="askForm">
-        <textarea id="questionInput" rows="3" placeholder="e.g. What is Orbis Financial's termination notice period?"></textarea>
+        <textarea id="questionInput" rows="3" placeholder="e.g. What is Orbis Financial's termination notice period?" aria-label="Ask a question about the demo documents"></textarea>
         <div class="ask-row">
-          <div class="presets" id="presets">
-            <button type="button" data-q="What is Orbis Financial's termination notice period?">Termination notice</button>
-            <button type="button" data-q="Does NexaAI offer a refund?">NexaAI refund</button>
-            <button type="button" data-q="What is photosynthesis?">General knowledge</button>
+          <div class="presets-wrap">
+            {% if demo_mode %}
+            <div class="preset-tip" id="presetTip">
+              <button class="preset-tip-close" id="presetTipClose" aria-label="Close">✕</button>
+              <span class="preset-tip-text">💡 Try one of these — they're tuned to show the full retrieval + verification flow in action</span>
+              <span class="preset-tip-arrow"></span>
+            </div>
+            {% endif %}
+            <div class="presets" id="presets">
+              <button type="button" data-q="What is Orbis Financial's termination notice period?" title="Clean grounded answer — no loops">Termination notice</button>
+              <button type="button" data-q="Does NexaAI offer a refund?" title="Triggers the IsSUP revise_answer loop">NexaAI refund <span class="preset-flag retry">↻ revise</span></button>
+              <button type="button" data-q="Does NexaAI offer a free trial?" title="Triggers the IsUSE rewrite_question loop">NexaAI trial <span class="preset-flag retry">↻ rewrite</span></button>
+              <button type="button" data-q="What is Orbis Financial's leave policy for interns?" title="Triggers no_answer_found — honest dead end">Intern leave policy <span class="preset-flag fail">✕ no answer</span></button>
+              <button type="button" data-q="What is photosynthesis?" title="Skips retrieval entirely">General knowledge</button>
+            </div>
           </div>
           <button type="submit" id="askBtn" class="ask-btn">
             <span class="btn-label">Run graph</span>
@@ -101,7 +248,18 @@
 </main>
 
 <footer class="footer">
-  <span>Built on LangGraph · Azure OpenAI · Flask</span>
+  <div class="footer-stack">
+    <span class="stack-badge">LangGraph</span>
+    <span class="stack-badge">Flask</span>
+    <span class="stack-badge">Server-Sent Events</span>
+    <span class="stack-badge">Azure OpenAI</span>
+    <span class="stack-badge">Vanilla JS + SVG</span>
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/EonFlash/Advanced-Adaptive-RAG-With-visualizer/tree/main" target="_blank" rel="noopener">View source on GitHub ↗</a>
+    <span class="footer-dot">·</span>
+    <a href="https://www.linkedin.com/in/chintan-gaur-b6b75028b/" target="_blank" rel="noopener">Connect on LinkedIn ↗</a>
+  </div>
 </footer>
 
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
